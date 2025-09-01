@@ -124,7 +124,35 @@ public class IncentivlySDK {
             throw error
         }
     }
-    
+
+    /// Check subscription status for the current user
+    /// - Returns: Check subscription status response
+    @discardableResult
+    public func checkSubscriptionStatus() async throws -> CheckSubscriptionStatusResponse {
+        guard let userIdentifier = getUserIdentifier() else {
+            throw UserError.userNotRegistered
+        }
+
+        guard let devKey = getDevKey() else {
+            throw UserError.devKeyNotFound
+        }
+
+        do {
+            let response = try await apiClient.checkSubscriptionStatus(userIdentifier: userIdentifier, devKey: devKey)
+
+            if response.success {
+                IncentivlyLogger.shared.logSuccess("Subscription status checked successfully - Active: \(response.isActive ?? false)")
+            } else {
+                IncentivlyLogger.shared.logError("Subscription status check failed: \(response.message ?? "Unknown error")")
+            }
+
+            return response
+        } catch {
+            IncentivlyLogger.shared.logError("Failed to check subscription status", error: error)
+            throw error
+        }
+    }
+
     /// Report a payment to the revenue sharing API
     /// - Parameters:
     ///   - productId: Product identifier

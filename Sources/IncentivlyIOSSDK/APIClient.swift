@@ -1,5 +1,8 @@
 import Foundation
 import StoreKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// API client for handling network requests
 internal class APIClient {
@@ -13,6 +16,58 @@ internal class APIClient {
         config.timeoutIntervalForResource = 60
         self.session = URLSession(configuration: config)
     }
+
+    /// Creates metadata object with device and app information
+    private func createMetadata() -> Metadata {
+        return Metadata(
+            appVersion: getAppVersion(),
+            deviceModel: getDeviceModel(),
+            platform: getPlatform()
+        )
+    }
+
+    /// Get the app version from Info.plist
+    private func getAppVersion() -> String {
+        #if canImport(UIKit)
+        return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+        #else
+        return "1.0.0" // Default version for non-iOS platforms
+        #endif
+    }
+
+    /// Get the device model
+    private func getDeviceModel() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machineMirror = Mirror(reflecting: systemInfo.machine)
+        let identifier = machineMirror.children.reduce("") { identifier, element in
+            guard let value = element.value as? Int8, value != 0 else { return identifier }
+            return identifier + String(UnicodeScalar(UInt8(value)))
+        }
+        return identifier
+    }
+
+    /// Get the platform (iOS)
+    private func getPlatform() -> String {
+        #if os(iOS)
+        return "iOS"
+        #elseif os(macOS)
+        return "macOS"
+        #elseif os(tvOS)
+        return "tvOS"
+        #elseif os(watchOS)
+        return "watchOS"
+        #else
+        return "iOS"
+        #endif
+    }
+
+    /// Generates a current timestamp in ISO 8601 format
+    private func generateTimestamp() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: Date())
+    }
     
     /// Register a user with the revenue sharing API
     /// - Parameters:
@@ -20,7 +75,7 @@ internal class APIClient {
     ///   - userIdentifier: Optional user identifier
     /// - Returns: User registration response
     func registerUser(devKey: String, userIdentifier: String? = nil) async throws -> UserRegistrationResponse {
-        let request = UserRegistrationRequest(devKey: devKey, userIdentifier: userIdentifier)
+        let request = UserRegistrationRequest(devKey: devKey, userIdentifier: userIdentifier, metadata: createMetadata())
         return try await sendRequest(endpoint: "/register-user", method: .POST, body: request)
     }
     
@@ -31,7 +86,7 @@ internal class APIClient {
     ///   - devKey: Developer key for authentication
     /// - Returns: Update user identifier response
     func updateUserIdentifier(currentUserIdentifier: String, newUserIdentifier: String, devKey: String) async throws -> UpdateUserIdentifierResponse {
-        let request = UpdateUserIdentifierRequest(currentUserIdentifier: currentUserIdentifier, newUserIdentifier: newUserIdentifier, devKey: devKey)
+        let request = UpdateUserIdentifierRequest(currentUserIdentifier: currentUserIdentifier, newUserIdentifier: newUserIdentifier, devKey: devKey, metadata: createMetadata())
         return try await sendRequest(endpoint: "/update-user-identifier", method: .POST, body: request)
     }
     
@@ -43,10 +98,28 @@ internal class APIClient {
     ///   - devKey: Developer key for authentication
     /// - Returns: Payment report response
     func reportPayment(userIdentifier: String, productId: String, iosTransactionId: String, devKey: String) async throws -> PaymentReportResponse {
-        let request = PaymentReportRequest(userIdentifier: userIdentifier, productId: productId, iosTransactionId: iosTransactionId, devKey: devKey)
+        let request = PaymentReportRequest(
+            userIdentifier: userIdentifier,
+            productId: productId,
+            iosTransactionId: iosTransactionId,
+            devKey: devKey,
+            timestamp: generateTimestamp(),
+            metadata: createMetadata(),
+            platform: getPlatform()
+        )
         return try await sendRequest(endpoint: "/report-payment", method: .POST, body: request)
     }
-    
+
+    /// Check subscription status
+    /// - Parameters:
+    ///   - userIdentifier: User identifier
+    ///   - devKey: Developer key for authentication
+    /// - Returns: Check subscription status response
+    func checkSubscriptionStatus(userIdentifier: String, devKey: String) async throws -> CheckSubscriptionStatusResponse {
+        let request = CheckSubscriptionStatusRequest(userIdentifier: userIdentifier, devKey: devKey, metadata: createMetadata())
+        return try await sendRequest(endpoint: "/check-subscription-status", method: .POST, body: request)
+    }
+
     /// Send a generic API request
     /// - Parameters:
     ///   - endpoint: API endpoint path
@@ -163,10 +236,18 @@ internal class APIClient {
 
 // MARK: - Request Models
 
+/// Metadata containing device and app information
+public struct Metadata: Codable {
+    let appVersion: String
+    let deviceModel: String
+    let platform: String
+}
+
 /// User registration request
 public struct UserRegistrationRequest: Codable {
     let devKey: String
     let userIdentifier: String?
+    let metadata: Metadata
 }
 
 /// Update user identifier request
@@ -174,6 +255,7 @@ public struct UpdateUserIdentifierRequest: Codable {
     let currentUserIdentifier: String
     let newUserIdentifier: String
     let devKey: String
+    let metadata: Metadata
 }
 
 /// Payment report request
@@ -182,6 +264,9 @@ public struct PaymentReportRequest: Codable {
     let productId: String
     let iosTransactionId: String
     let devKey: String
+    let timestamp: String
+    let metadata: Metadata
+    let platform: String
 }
 
 // MARK: - Response Models
@@ -208,6 +293,20 @@ public struct PaymentReportResponse: Codable {
     let success: Bool
     let message: String?
     let paymentId: String?
+}
+
+/// Check subscription status request
+public struct CheckSubscriptionStatusRequest: Codable {
+    let userIdentifier: String
+    let devKey: String
+    let metadata: Metadata
+}
+
+/// Check subscription status response
+public struct CheckSubscriptionStatusResponse: Codable {
+    let success: Bool
+    let message: String?
+    let isActive: Bool?
 }
 
 
