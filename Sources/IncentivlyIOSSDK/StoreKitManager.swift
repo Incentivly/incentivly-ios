@@ -107,22 +107,22 @@ internal class StoreKitManager {
     private func processTransaction(_ transaction: Transaction) async {
         reportLock.lock()
         
-        guard Transactions.shouldProcessTransaction(with: transaction.id) else {
+        guard Transactions.shouldProcessTransaction(with: transaction.originalID) else {
             reportLock.unlock()
             return
         }
-        
-        IncentivlyLogger.shared.logInfo("💳 Processing transaction: \(transaction.productID) (ID: \(transaction.id), date: \(transaction.purchaseDate))")
+
+        IncentivlyLogger.shared.logInfo("💳 Processing transaction: \(transaction.productID) (Original ID: \(transaction.originalID), date: \(transaction.purchaseDate))")
 //        Report payment to IncentivlySDK
         do {
             try await IncentivlySDK.shared.reportPayment(
                 productId: transaction.productID,
-                iosTransactionId: String(transaction.id)
+                iosTransactionId: String(transaction.originalID)
             )
-            Transactions.saveProcessedTransaction(id: transaction.id)
+            Transactions.saveProcessedTransaction(id: transaction.originalID)
             IncentivlyLogger.shared.logInfo("✅ Transaction reported successfully: \(transaction.productID)")
         } catch {
-            Transactions.addTransactionReportAttempt(for: transaction.id)
+            Transactions.addTransactionReportAttempt(for: transaction.originalID)
             IncentivlyLogger.shared.logError("Failed to report payment to IncentivlySDK", error: error)
         }
         
